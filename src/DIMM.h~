@@ -1,0 +1,55 @@
+#ifndef __MEMORYCONTROLLER_H
+#define __MEMORYCONTROLLER_H
+
+#include <list>
+#include <deque>
+#include <string>
+#include <vector>
+
+#include "Request.h"
+
+using namespace std;
+
+namespace ramulator {
+
+class MemoryController {
+    /* Member variables */
+    long clk = 0;
+
+    bool print_cmd_trace = false;
+    bool record_cmd_trace = false;
+
+
+    // @rajat :placeholder for DIMMs attached to this memory controller instance
+    map<int, DIMM*> dimms;
+    
+
+    MemoryController() {
+      // @rajat: Constructor logic, object set-up
+      
+    }
+    
+    ~MemoryController() {
+      // @rajat: Handle the object deletion
+    }
+
+    
+
+    void tick() {
+      clk++;
+
+      //@rajat: Fill in the logic
+      // Handle the processing of an NMP request if pending 
+    }
+
+    void finish() {
+      // @rajat: Fill in the logic
+    }
+
+  };/*class MemoryController*/
+  
+
+
+  
+}  /*namespace ramulator*/
+#endif /*__MEMORYCONTROLLER_H*/

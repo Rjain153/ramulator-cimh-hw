@@ -1,0 +1,34 @@
+#include <iostream>
+
+class ComputeRequest {
+public:
+  Memory *memory;
+  
+  int address; // memory address of data
+  int operation; // operation to be performed on data
+  int result; // result of computation
+  
+  // constructor
+ ComputeRequest(int address, int operation) : address(address), operation(operation) {}
+  
+  // function to execute the request
+  void execute() {
+    // read data from memory
+    int data = memory->read(address);
+
+    // perform the operation on the data
+    switch (operation)
+      {
+      case 0: // square
+	result = data * data;
+	break;
+      case 1: // cube
+	result = data * data * data;
+	break;
+	// add more cases for other operations
+      }
+
+    // write the result back to memory
+    memory->write(address, result);
+  }
+};
