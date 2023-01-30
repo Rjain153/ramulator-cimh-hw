@@ -32,7 +32,6 @@
 /* Disaggregated memory */
 #include "MasterUXISwitch.h"
 #include "SlaveUXISwitch.h"
-//#include "MemoryController.h"
 #include "DIMM.h"
 #include "MemoryHub.h"
 
@@ -44,8 +43,6 @@ bool ramulator::warmup_complete = false;
 template<typename T>
 void run_dramtrace(const Config& configs, MemoryHub<T>& memoryHub, const char* tracename) {
 
-  //std::cout << "run_dramtrace" << std::endl;
-  
     /* initialize DRAM trace */
     Trace trace(tracename);
 
@@ -81,20 +78,12 @@ void run_dramtrace(const Config& configs, MemoryHub<T>& memoryHub, const char* t
                 }
             }
         }
-        else {
-	  /*
-            memory.set_high_writeq_watermark(0.0f); // make sure that all write requests in the
-                                                    // write queue are drained
-						    */
-        }
-
-        //memory.tick();
         memoryHub.tick();
         clks ++;
         Stats::curTick++; // memory clock, global, for Statistics
     }
     // This a workaround for statistics set only initially lost in the end
-    //memory.tick();
+    memoryHub.tick();
     memoryHub.finish();
     Stats::statlist.printall();
 }
@@ -178,13 +167,8 @@ void start_run(const Config& configs, T* spec, const vector<const char*>& files)
   // Attached to each slave UXI switch could be multiple memory channels
   // Attached to each memory channel could be multiple DIMMs
 
-  //std::cout << "start_run" << std::endl;
-  
   int num_master_uxi_switch = configs.get_master_uxi_switches();
   int num_slave_uxi_switch_per_master = configs.get_slave_uxi_switches_per_master();
-  
-  //cout << "num master uxi switches : " << num_master_uxi_switch << endl;
-  //cout << "num slave uxi switch per master : " << num_slave_uxi_switch_per_master << endl;
   
   spec->set_master_uxi_switch_number(num_master_uxi_switch);
   spec->set_slave_uxi_switch_number(num_slave_uxi_switch_per_master);
@@ -195,50 +179,31 @@ void start_run(const Config& configs, T* spec, const vector<const char*>& files)
   // Check and Set channel, rank number
   spec->set_channel_number(C);
   spec->set_rank_number(R);
-  //std::vector<Controller<T>*> ctrls;
 
   std::vector<MasterUXISwitch<T>*> master_uxi_switches;
-  //map<int, MasterUXISwitch<T>*> master_uxi_switches;
   for( int ms = 0; ms < num_master_uxi_switch; ms++ ) {
-    MasterUXISwitch<T>* msObj = new MasterUXISwitch<T>();
-    //cout << "MasterUXISwitch object is created with id : " << ms << endl;
+      MasterUXISwitch<T>* msObj = new MasterUXISwitch<T>((ComputeUnitId_t)ms);
 
-    for( int slv_switch = 0; slv_switch < num_slave_uxi_switch_per_master; slv_switch++) {
-      SlaveUXISwitch<T>* slvObj = new SlaveUXISwitch<T>();
-      //cout << "SlaveUXISwitch object is created with id: " << slv_switch << endl;
+      for( int slv_switch = 0; slv_switch < num_slave_uxi_switch_per_master; slv_switch++) {
+          SlaveUXISwitch<T>* slvObj = new SlaveUXISwitch<T>((ComputeUnitId_t)slv_switch);
 
       for(int c = 0; c < C; c++) {
           DRAM<T>* channel = new DRAM<T>(spec, T::Level::Channel);
           channel->id = c;
           channel->regStats("");
-          //cout << "channel object is created with id: " << c << endl;
           Controller<T>* ctrl = new Controller<T>(configs, channel);
-          //cout << "Controller object is created with id: " << c << endl;
-          //slvObj->memoryControllers.insert(std::pair<int, Controller<T>*>(c,ctrl));
           slvObj->memoryControllers.push_back(ctrl);
       }
-      //msObj->slaveSwitches.insert(std::pair<int, SlaveUXISwitch<T>*>(slv_switch,slvObj));
       msObj->slaveSwitches.push_back(slvObj);
     }
-    //master_uxi_switches.insert(std::pair<int, MasterUXISwitch<T>*>(ms,msObj));
     master_uxi_switches.push_back(msObj);
   }
 
-  /*
-  for (int c = 0 ; c < C ; c++) {
-    DRAM<T>* channel = new DRAM<T>(spec, T::Level::Channel);
-    channel->id = c;
-    channel->regStats("");
-    Controller<T>* ctrl = new Controller<T>(configs, channel);
-    ctrls.push_back(ctrl);
-  }
-  Memory<T, Controller> memory(configs, ctrls);
-  */
   MemoryHub<T> memoryHub(configs, master_uxi_switches);
 
   assert(files.size() != 0);
   if (configs["trace_type"] == "CPU") {
-    //run_cputrace(configs, memory, files);
+    //run_cputrace(configs, memory, files); // @rajat: disabled cputrace for memoryHub, later enable it
   } else if (configs["trace_type"] == "DRAM") {
     run_dramtrace(configs, memoryHub, files[0]);
   }
@@ -292,57 +257,7 @@ int main(int argc, const char *argv[])
     configs.set_core_num(argc - trace_start);
     DDR4* ddr4 = new DDR4(configs["org"], configs["speed"]);
     start_run(configs, ddr4, files);
-    /*
-    if (standard == "DDR3") {
-      DDR3* ddr3 = new DDR3(configs["org"], configs["speed"]);
-      start_run(configs, ddr3, files);
-    } else if (standard == "DDR4") {
-      DDR4* ddr4 = new DDR4(configs["org"], configs["speed"]);
-      start_run(configs, ddr4, files);
-    } else if (standard == "SALP-MASA") {
-      SALP* salp8 = new SALP(configs["org"], configs["speed"], "SALP-MASA", configs.get_subarrays());
-      start_run(configs, salp8, files);
-    } else if (standard == "LPDDR3") {
-      LPDDR3* lpddr3 = new LPDDR3(configs["org"], configs["speed"]);
-      start_run(configs, lpddr3, files);
-    } else if (standard == "LPDDR4") {
-      // total cap: 2GB, 1/2 of others
-      LPDDR4* lpddr4 = new LPDDR4(configs["org"], configs["speed"]);
-      start_run(configs, lpddr4, files);
-    } else if (standard == "GDDR5") {
-      GDDR5* gddr5 = new GDDR5(configs["org"], configs["speed"]);
-      start_run(configs, gddr5, files);
-    } else if (standard == "HBM") {
-      HBM* hbm = new HBM(configs["org"], configs["speed"]);
-      start_run(configs, hbm, files);
-    } else if (standard == "WideIO") {
-      // total cap: 1GB, 1/4 of others
-      WideIO* wio = new WideIO(configs["org"], configs["speed"]);
-      start_run(configs, wio, files);
-    } else if (standard == "WideIO2") {
-      // total cap: 2GB, 1/2 of others
-      WideIO2* wio2 = new WideIO2(configs["org"], configs["speed"], configs.get_channels());
-      wio2->channel_width *= 2;
-      start_run(configs, wio2, files);
-    } else if (standard == "STTMRAM") {
-      STTMRAM* sttmram = new STTMRAM(configs["org"], configs["speed"]);
-      start_run(configs, sttmram, files);
-    } else if (standard == "PCM") {
-      PCM* pcm = new PCM(configs["org"], configs["speed"]);
-      start_run(configs, pcm, files);
-    }
-    // Various refresh mechanisms
-      else if (standard == "DSARP") {
-      DSARP* dsddr3_dsarp = new DSARP(configs["org"], configs["speed"], DSARP::Type::DSARP, configs.get_subarrays());
-      start_run(configs, dsddr3_dsarp, files);
-    } else if (standard == "ALDRAM") {
-      ALDRAM* aldram = new ALDRAM(configs["org"], configs["speed"]);
-      start_run(configs, aldram, files);
-    } else if (standard == "TLDRAM") {
-      TLDRAM* tldram = new TLDRAM(configs["org"], configs["speed"], configs.get_subarrays());
-      start_run(configs, tldram, files);
-    }
-    */
+
     printf("Simulation done. Statistics written to %s\n", stats_out.c_str());
 
     return 0;

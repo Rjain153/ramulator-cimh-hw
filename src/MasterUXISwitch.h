@@ -9,7 +9,6 @@
 
 #include "Request.h"
 #include "SlaveUXISwitch.h"
-//#include "ComputeCore.h"
 
 using namespace std;
 
@@ -26,7 +25,6 @@ public:
     vector<SlaveUXISwitch<T>*> slaveSwitches;
     vector<Request> nmpIns;
     ComputeUnitId_t cimhUnitId;
-    //map<int, SlaveUXISwitch<T>*> slaveSwitches;
     
     MasterUXISwitch() = default;
     MasterUXISwitch( ComputeUnitId_t cimhUnitId ) : cimhUnitId(cimhUnitId) {}
@@ -104,9 +102,6 @@ public:
     }
 
 };// class MasterUXISwitch
-  
-
-
   
 }  // namespace ramulator
 #endif //__MASTERUXISWITCH_H

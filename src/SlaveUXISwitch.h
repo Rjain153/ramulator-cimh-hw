@@ -8,9 +8,7 @@
 #include <map>
 
 #include "Request.h"
-//#include "MemoryController.h"
 #include "Controller.h"
-//#include "ComputeCore.h"
 
 using namespace std;
 
@@ -25,9 +23,6 @@ public:
     bool record_cmd_trace = false;
 
     ComputeUnitId_t cimhUnitId;
-    //ComputeCore cc;
-    
-    //map<int,MemoryController*> memoryControllers;
     vector<Controller<T>*> memoryControllers;
     vector<Request> nmpIns;
     

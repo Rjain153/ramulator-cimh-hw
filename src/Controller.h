@@ -85,6 +85,9 @@ public:
         unsigned int size() {return q.size();}
     };
 
+    ComputeUnitId_t cimhUnitId;
+    vector<Request> nmpIns;
+    
     Queue readq;  // queue for read requests
     Queue writeq;  // queue for write requests
     Queue actq; // read and write requests for which activate was issued are moved to 
@@ -336,7 +339,8 @@ public:
         // nmp requests in some sense are read requests, so treat them the same way
         if ( req.type == Request::Type::NMP && find_if(writeq.q.begin(), writeq.q.end(),
                 [req](Request& wreq){ return req.addr == wreq.addr;}) != writeq.q.end()){
-            req.depart = clk + 1 + NMP_OP_CYCLES; //@rajat: execution cycles need to be simulated
+            //@rajat: execution cycles need to be simulated
+            req.depart = clk + 1 + req.num_cycles_NMP_Ins_Execution[req.ins.opcode];
             pending.push_back(req);
             nmpq.q.pop_back();
         }
@@ -486,8 +490,7 @@ public:
 
         // set a future completion time for nmp requests
         if (req->type == Request::Type::NMP) {
-            req->depart = clk + channel->spec->read_latency + NMP_OP_CYCLES; // @rajat: later fix this
-            // @rajat: use dynamic cycles based on opcode
+            req->depart = clk + channel->spec->read_latency + req->num_cycles_NMP_Ins_Execution[req->ins.opcode];;
             pending.push_back(*req);
         }
 
