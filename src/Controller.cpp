@@ -54,8 +54,9 @@ void Controller<ALDRAM>::update_temp(ALDRAM::Temp current_temperature){
 template <>
 void Controller<TLDRAM>::tick(){
     clk++;
-    req_queue_length_sum += readq.size() + writeq.size();
+    req_queue_length_sum += readq.size() + writeq.size() + nmpq.size();
     read_req_queue_length_sum += readq.size();
+    nmp_req_queue_length_sum += nmpq.size();
     write_req_queue_length_sum += writeq.size();
 
     /*** 1. Serve completed reads ***/
@@ -75,7 +76,7 @@ void Controller<TLDRAM>::tick(){
     /*** 2. Should we schedule refreshes? ***/
     refresh->tick_ref();
 
-    /*** 3. Should we schedule writes? ***/
+    /*** 3. Should we schedule writes/reads/nmp? ***/
     if (!write_mode) {
         // yes -- write queue is almost full or read queue is empty
         if (writeq.size() >= int(0.8 * writeq.max) /*|| readq.size() == 0*/)
@@ -88,7 +89,8 @@ void Controller<TLDRAM>::tick(){
     }
 
     /*** 4. Find the best command to schedule, if any ***/
-    Queue* queue = !write_mode ? &readq : &writeq;
+    Queue* queue = nmp_mode ? &nmpq : (!write_mode ? &readq : &writeq);
+    //Queue* queue = !write_mode ? &readq : &writeq;
     if (otherq.size())
         queue = &otherq;  // "other" requests are rare, so we give them precedence over reads/writes
 
@@ -106,11 +108,11 @@ void Controller<TLDRAM>::tick(){
     if (req->is_first_command) {
         int coreid = req->coreid;
         req->is_first_command = false;
-        if (req->type == Request::Type::READ || req->type == Request::Type::WRITE) {
+        if (req->type == Request::Type::READ || req->type == Request::Type::WRITE || req->type == Request::Type::NMP ) {
           channel->update_serving_requests(req->addr_vec.data(), 1, clk);
         }
         int tx = (channel->spec->prefetch_size * channel->spec->channel_width / 8);
-        if (req->type == Request::Type::READ) {
+        if (req->type == Request::Type::READ || req->type == Request::Type::NMP ) {
             if (is_row_hit(req)) {
                 ++read_row_hits[coreid];
                 ++row_hits;
@@ -153,6 +155,11 @@ void Controller<TLDRAM>::tick(){
     // set a future completion time for read requests
     if (req->type == Request::Type::READ || req->type == Request::Type::EXTENSION) {
         req->depart = clk + channel->spec->read_latency;
+        pending.push_back(*req);
+    }
+    // set a future completion time for nmp requests
+    if (req->type == Request::Type::NMP) {
+        req->depart = clk + channel->spec->read_latency + NMP_OP_CYCLES;
         pending.push_back(*req);
     }
     if (req->type == Request::Type::WRITE) {

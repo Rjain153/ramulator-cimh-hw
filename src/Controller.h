@@ -22,6 +22,8 @@
 
 #include "NMP_core.h"
 
+#define NMP_OP_CYCLES 4
+
 using namespace std;
 
 namespace ramulator
@@ -57,6 +59,8 @@ protected:
     ScalarStat read_req_queue_length_sum;
     ScalarStat write_req_queue_length_avg;
     ScalarStat write_req_queue_length_sum;
+    ScalarStat nmp_req_queue_length_avg;
+    ScalarStat nmp_req_queue_length_sum;
 
 #ifndef INTEGRATED_WITH_GEM5
     VectorStat record_read_hits;
@@ -95,6 +99,7 @@ public:
 
     deque<Request> pending;  // read requests that are about to receive data from DRAM
     bool write_mode = false;  // whether write requests should be prioritized over reads
+    bool nmp_mode = false;    // whether nmp requests should be prioritized over reads and writes
     float wr_high_watermark = 0.8f; // threshold for switching to write mode
     float wr_low_watermark = 0.2f; // threshold for switching back to read mode
     //long refreshed = 0;  // last time refresh requests were generated
@@ -309,8 +314,8 @@ public:
         switch (int(type)) {
             case int(Request::Type::READ): return readq;
             case int(Request::Type::WRITE): return writeq;
-	    case int(Request::Type::NMP): return nmpq;
-	default: return otherq;
+	        case int(Request::Type::NMP): return nmpq;
+            default: return otherq;
         }
     }
 
@@ -324,21 +329,28 @@ public:
         queue.q.push_back(req);
         // shortcut for read requests, if a write to same addr exists
         // necessary for coherence
-        if (req.type == Request::Type::READ && find_if(writeq.q.begin(), writeq.q.end(),
+        if ( req.type == Request::Type::READ && find_if(writeq.q.begin(), writeq.q.end(),
                 [req](Request& wreq){ return req.addr == wreq.addr;}) != writeq.q.end()){
             req.depart = clk + 1;
             pending.push_back(req);
             readq.q.pop_back();
         }
-	//cout << "request added to the correct queue in the controller" << endl;
+        // nmp requests in some sense are read requests, so treat them the same way
+        if ( req.type == Request::Type::NMP && find_if(writeq.q.begin(), writeq.q.end(),
+                [req](Request& wreq){ return req.addr == wreq.addr;}) != writeq.q.end()){
+            req.depart = clk + 1 + NMP_OP_CYCLES; //@rajat: execution cycles need to be simulated
+            pending.push_back(req);
+            nmpq.q.pop_back();
+        }
+        
         return true;
     }
 
     void tick()
     {
         clk++;
-        req_queue_length_sum += readq.size() + writeq.size() + pending.size();
-        read_req_queue_length_sum += readq.size() + pending.size();
+        req_queue_length_sum += readq.size() + writeq.size() + pending.size() + nmpq.size();
+        read_req_queue_length_sum += readq.size() + pending.size() + nmpq.size();
         write_req_queue_length_sum += writeq.size();
 
         /*** 1. Serve completed reads ***/
@@ -358,16 +370,23 @@ public:
         /*** 2. Refresh scheduler ***/
         refresh->tick_ref();
 
-        /*** 3. Should we schedule writes? ***/
+        /*** 3. Should we schedule writes/read/nmp? ***/
+        /*** Priority order: nmpq > readq > writeq ***/
         if (!write_mode) {
-            // yes -- write queue is almost full or read queue is empty
-            if (writeq.size() > int(wr_high_watermark * writeq.max) || readq.size() == 0)
+            // yes -- write queue is almost full or (read queue and nmp queue) is empty
+            if (writeq.size() > int(wr_high_watermark * writeq.max) || (readq.size() == 0 && nmpq.size() == 0))
                 write_mode = true;
-        }
-        else {
-            // no -- write queue is almost empty and read queue is not empty
-            if (writeq.size() < int(wr_low_watermark * writeq.max) && readq.size() != 0)
+        } else {
+            // no -- write queue is almost empty and (read or nmp queue) is not empty
+            if (writeq.size() < int(wr_low_watermark * writeq.max) && ( readq.size() != 0 || nmpq.size() != 0) ) {
                 write_mode = false;
+                // nmp queue is prioritized in comparison to 
+                if( nmpq.size() != 0 ) {
+                    nmp_mode = true;
+                } else {
+                    nmp_mode = false;
+                }
+            }
         }
 
         /*** 4. Find the best command to schedule, if any ***/
@@ -386,7 +405,8 @@ public:
         }
 
         if (!is_valid_req) {
-            queue = !write_mode ? &readq : &writeq;
+            queue = nmp_mode ? &nmpq : (!write_mode ? &readq : &writeq);
+            //queue = !write_mode ? &readq : &writeq;
 
             if (otherq.size())
                 queue = &otherq;  // "other" requests are rare, so we give them precedence over reads/writes
@@ -414,11 +434,11 @@ public:
         if (req->is_first_command) {
             req->is_first_command = false;
             int coreid = req->coreid;
-            if (req->type == Request::Type::READ || req->type == Request::Type::WRITE) {
+            if (req->type == Request::Type::READ || req->type == Request::Type::WRITE || req->type == Request::Type::NMP ) {
               channel->update_serving_requests(req->addr_vec.data(), 1, clk);
             }
             int tx = (channel->spec->prefetch_size * channel->spec->channel_width / 8);
-            if (req->type == Request::Type::READ) {
+            if (req->type == Request::Type::READ || req->type == Request::Type::NMP) {
                 if (is_row_hit(req)) {
                     ++read_row_hits[coreid];
                     ++row_hits;
@@ -463,6 +483,13 @@ public:
         // set a future completion time for read requests
         if (req->type == Request::Type::READ) {
             req->depart = clk + channel->spec->read_latency;
+            pending.push_back(*req);
+        }
+
+        // set a future completion time for nmp requests
+        if (req->type == Request::Type::NMP) {
+            req->depart = clk + channel->spec->read_latency + NMP_OP_CYCLES; // @rajat: later fix this
+            // @rajat: use dynamic cycles based on opcode
             pending.push_back(*req);
         }
 
@@ -557,7 +584,8 @@ private:
         // currently, autoprecharge is only used with closed row policy
         if(channel->spec->is_accessing(cmd) && rowpolicy->type == RowPolicy<T>::Type::ClosedAP) {
             // check if it is the last request to the opened row
-            Queue* queue = write_mode ? &writeq : &readq;
+            Queue* queue = nmp_mode ? &nmpq : (!write_mode ? &readq : &writeq);
+            //Queue* queue = write_mode ? &writeq : &readq;
 
             auto begin = addr_vec.begin();
             vector<int> rowgroup(begin, begin + int(T::Level::Row) + 1);
