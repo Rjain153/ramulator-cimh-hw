@@ -20,16 +20,14 @@
 #include "SALP.h"
 #include "TLDRAM.h"
 
-#include "NMP_core.h"
-
-#define NMP_OP_CYCLES 4
+//#include "NMP_core.h"
 
 using namespace std;
 
 namespace ramulator
 {
 
-    extern bool warmup_complete;
+extern bool warmup_complete;
 
 template <typename T>
 class Controller

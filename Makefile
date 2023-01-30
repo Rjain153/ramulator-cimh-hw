@@ -9,8 +9,8 @@ OBJS := $(patsubst $(SRCDIR)/%.cpp, $(OBJDIR)/%.o, $(SRCS))
 #   g++ 4.x due to an internal compiler error when processing lambda functions.
 CXX := clang++
 # CXX := g++-5
-CXXFLAGS := -O3 -std=c++11 -g -Wall
-
+#CXXFLAGS := -O3 -std=c++11 -g -Wall
+CXXFLAGS := -O3 -std=c++11 -g 
 .PHONY: all clean depend
 
 all: depend ramulator

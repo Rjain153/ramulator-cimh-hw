@@ -53,17 +53,14 @@ protected:
 
  public:
   enum class Type {  // @rajat: Add the MasterUXISwitch and SlaveUXISwitch config handling bits as well
-    // Ms: Master Switch, Ss: Slave switch, Ch: Channel, Ra: Rank, Ba: Bank, Ro: Row#, Co: Col#
-    MsSsChRaBaRoCo,
-      MsSsRoBaRaCoCh,
-      MAX,
-      } type = Type::MsSsChRaBaRoCo;
+      // Ms: Master Switch, Ss: Slave switch, Ch: Channel, Ra: Rank, Ba: Bank, Ro: Row#, Co: Col#
+      MsSsChRaBaRoCo,
+          MsSsRoBaRaCoCh,
+          MAX,
+          } type = Type::MsSsChRaBaRoCo;
 
-  //friend ostream& operator<<( ostream& out, string func_name);
-  
-  /*
-    Ms---- Ss----- Ro----- Ba----------- Ch-------- Ro--------- Co-------- Physoical address
-  */ 
+    
+    // Ms---- Ss----- Ro----- Ba----------- Ch-------- Ro--------- Co-------- Physical address 
     vector<MasterUXISwitch<T>*> masterUxiSwitches;
     T * spec;
     vector<int> addr_bits;
@@ -75,7 +72,7 @@ protected:
 
     MemoryHub(const Config& configs, vector<MasterUXISwitch<T>*> masterUxiSwitches)
         : masterUxiSwitches(masterUxiSwitches),
-      spec(masterUxiSwitches[0]->slaveSwitches[0]->memoryControllers[0]->channel->spec),
+          spec(masterUxiSwitches[0]->slaveSwitches[0]->memoryControllers[0]->channel->spec),
           addr_bits(int(T::Level::MAX))
     {
         // make sure 2^N channels/ranks
@@ -94,18 +91,18 @@ protected:
         max_address = spec->channel_width / 8;
 
         for (unsigned int lev = 0; lev < addr_bits.size(); lev++) {
-          addr_bits[lev] = calc_log2(sz[lev]);
-	  //std::cout << "addr_bits[" << lev << "] : " << addr_bits[lev] << std::endl;
-	  max_address *= sz[lev];
+            addr_bits[lev] = calc_log2(sz[lev]);
+            //std::cout << "addr_bits[" << lev << "] : " << addr_bits[lev] << std::endl;
+            max_address *= sz[lev];
         }
 
         //addr_bits[int(T::Level::MAX) - 1] -= calc_log2(spec->prefetch_size); //OLD code. @rajat: check this out, should this be -= calc_log2(spec->prefetch_size) alone or -= tx_bits
-	addr_bits[int(T::Level::MAX) - 1] -= tx_bits;  // NEW code. @rajat: ensure this is right
+        addr_bits[int(T::Level::MAX) - 1] -= tx_bits;  // NEW code. @rajat: ensure this is right
 
-	// construct a list of available pages
-	free_physical_pages_remaining = max_address >> 12;
+        // construct a list of available pages
+        free_physical_pages_remaining = max_address >> 12;
 
-	free_physical_pages.resize(free_physical_pages_remaining, -1);
+        free_physical_pages.resize(free_physical_pages_remaining, -1);
     }
 
     ~MemoryHub()
@@ -121,9 +118,9 @@ protected:
     }
 
     void record_core(int coreid) {
-      for (auto ms : masterUxiSwitches) {
-        ms->record_core(coreid);
-      }
+        for (auto ms : masterUxiSwitches) {
+            ms->record_core(coreid);
+        }
     }
 
     void tick()
@@ -143,58 +140,48 @@ protected:
         in_queue_write_req_num_sum += cur_que_writereq_num;
       */
         for (auto ms : masterUxiSwitches) {
-          ms->tick();
+            ms->tick();
         }
     }
 
     bool send(Request req)
     {
-      cout << "send " << hex << req.addr << endl;
-      //cout << "send " << endl;
-      //return true;
         req.addr_vec.resize(addr_bits.size());
         long addr = req.addr;
         int coreid = req.coreid;
 
-	//cout << "1.  addr : " << hex << addr << endl;
-	//cout << "tx_bits : " << tx_bits << endl;
-	
         // Each transaction size is 2^tx_bits, so first clear the lowest tx_bits bits
         clear_lower_bits(addr, tx_bits); //@rajat: Check this whether this is needed, feels to be wrong, that's why commenting it out
 
-	//cout << "2. addr : " << hex << addr << endl;
-
-	switch(int(type)){
-	case int(Type::MsSsChRaBaRoCo):
-	  //cout << "MsSsChRaBaRoCo" << endl;
-	  for (int i = addr_bits.size() - 1; i >= 0; i--) {
-	    //cout << "addr_bits[" << i << "] = " << addr_bits[i] << endl;
-	    req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
-	    //cout << "req.addr_vec[" << i << "] = " << hex << req.addr_vec[i] << endl;
-	  }
-	  break;
-	case int(Type::MsSsRoBaRaCoCh):
-	  //cout << "MsSsRoBaRaCoCh" << endl;
-	  req.addr_vec[0] = slice_lower_bits(addr, addr_bits[0]);
-	  req.addr_vec[addr_bits.size() - 1] = slice_lower_bits(addr, addr_bits[addr_bits.size() - 1]);
-	  for (int i = 1; i <= int(T::Level::Row); i++)
-	    req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
-	  break;
-	default:
-	  assert(false);
+        switch(int(type)){
+        case int(Type::MsSsChRaBaRoCo):
+            for (int i = addr_bits.size() - 1; i >= 0; i--) {
+                req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
+            }
+            break;
+        case int(Type::MsSsRoBaRaCoCh):
+            req.addr_vec[0] = slice_lower_bits(addr, addr_bits[0]);
+            req.addr_vec[addr_bits.size() - 1] = slice_lower_bits(addr, addr_bits[addr_bits.size() - 1]);
+            for (int i = 1; i <= int(T::Level::Row); i++) {
+                req.addr_vec[i] = slice_lower_bits(addr, addr_bits[i]);
+            }
+            break;
+        default:
+            assert(false);
         }
-
+        
         if(masterUxiSwitches[req.addr_vec[int(T::Level::MasterUxiSwitch)]]->enqueue(req)) {
-	  //cout << "request enqueued to masterUxiSwitch " << req.addr_vec[int(T::Level::MasterUxiSwitch)] << endl;
-	  // tally stats here to avoid double counting for requests that aren't enqueued
-	  if (req.type == Request::Type::READ) {
-	    // @rajat: collect Stat
-	  }
-	  if (req.type == Request::Type::WRITE) {
-	    // @rajat: collect Stat
-	  }
-	  // @rajat: collect Stat
-	  return true;
+            // tally stats here to avoid double counting for requests that aren't enqueued
+            if (req.type == Request::Type::READ) {
+                // @rajat: collect Stat
+            }
+            if (req.type == Request::Type::WRITE) {
+                // @rajat: collect Stat
+            }
+            if (req.type == Request::Type::NMP) {
+                // @rajat: collect Stat
+            }
+            return true;
         }
 
         return false;

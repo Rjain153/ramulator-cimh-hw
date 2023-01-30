@@ -51,7 +51,7 @@ void run_dramtrace(const Config& configs, MemoryHub<T>& memoryHub, const char* t
 
     /* run simulation */
     bool stall = false, end = false;
-    int reads = 0, writes = 0, clks = 0;
+    int reads = 0, writes = 0, clks = 0, nmps = 0;
     long addr = 0;
     Request::Type type = Request::Type::READ;
     map<int, int> latencies;
@@ -70,8 +70,15 @@ void run_dramtrace(const Config& configs, MemoryHub<T>& memoryHub, const char* t
             req.type = type;
             stall = !memoryHub.send(req);
             if (!stall){
-                if (type == Request::Type::READ) reads++;
-                else if (type == Request::Type::WRITE) writes++;
+                if (type == Request::Type::READ) {
+                    reads++;
+                } else {
+                    if (type == Request::Type::WRITE) {
+                        writes++;
+                    } else {
+                        nmps++;
+                    }
+                }
             }
         }
         else {
@@ -81,11 +88,13 @@ void run_dramtrace(const Config& configs, MemoryHub<T>& memoryHub, const char* t
 						    */
         }
 
+        //memory.tick();
         memoryHub.tick();
         clks ++;
         Stats::curTick++; // memory clock, global, for Statistics
     }
     // This a workaround for statistics set only initially lost in the end
+    //memory.tick();
     memoryHub.finish();
     Stats::statlist.printall();
 }
@@ -199,14 +208,14 @@ void start_run(const Config& configs, T* spec, const vector<const char*>& files)
       //cout << "SlaveUXISwitch object is created with id: " << slv_switch << endl;
 
       for(int c = 0; c < C; c++) {
-	DRAM<T>* channel = new DRAM<T>(spec, T::Level::Channel);
-	channel->id = c;
-	channel->regStats("");
-	//cout << "channel object is created with id: " << c << endl;
-	Controller<T>* ctrl = new Controller<T>(configs, channel);
-	//cout << "Controller object is created with id: " << c << endl;
-	//slvObj->memoryControllers.insert(std::pair<int, Controller<T>*>(c,ctrl));
-	slvObj->memoryControllers.push_back(ctrl);
+          DRAM<T>* channel = new DRAM<T>(spec, T::Level::Channel);
+          channel->id = c;
+          channel->regStats("");
+          //cout << "channel object is created with id: " << c << endl;
+          Controller<T>* ctrl = new Controller<T>(configs, channel);
+          //cout << "Controller object is created with id: " << c << endl;
+          //slvObj->memoryControllers.insert(std::pair<int, Controller<T>*>(c,ctrl));
+          slvObj->memoryControllers.push_back(ctrl);
       }
       //msObj->slaveSwitches.insert(std::pair<int, SlaveUXISwitch<T>*>(slv_switch,slvObj));
       msObj->slaveSwitches.push_back(slvObj);
